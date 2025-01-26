@@ -1,16 +1,195 @@
-## Hi there 👋
+# aqyunk
 
-<!--
-**aqyunk/aqyunk** is a ✨ _special_ ✨ repository because its `README.md` (this file) appears on your GitHub profile.
+## Быстрый старт
 
-Here are some ideas to get you started:
+* Для docker compose
+  
+```
+git clone https://github.com/skl256/grafana_stack_for_docker.git && \ нажимаем y
+cd grafana_stack_for_docker && \
+sudo mkdir -p /mnt/common_volume/swarm/grafana/config && \
+sudo mkdir -p /mnt/common_volume/grafana/{grafana-config,grafana-data,prometheus-data,loki-data,promtail-data} && \
+sudo chown -R $(id -u):$(id -g) {/mnt/common_volume/swarm/grafana/config,/mnt/common_volume/grafana} && \
+touch /mnt/common_volume/grafana/grafana-config/grafana.ini && \
+cp config/* /mnt/common_volume/swarm/grafana/config/ && \
+mv grafana.yaml docker-compose.yaml && \
 
-- 🔭 I’m currently working on ...
-- 🌱 I’m currently learning ...
-- 👯 I’m looking to collaborate on ...
-- 🤔 I’m looking for help with ...
-- 💬 Ask me about ...
-- 📫 How to reach me: ...
-- 😄 Pronouns: ...
-- ⚡ Fun fact: ...
--->
+```
+![image](https://github.com/aqyunk/aqyunk/blob/main/1.jpg)
+![image](https://github.com/aqyunk/aqyunk/blob/main/2.jpg)
+ * Устанавливаем последнею версию и утилитю docker-compose
+
+```
+sudo yum install curl && \
+COMVER=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep 'tag_name' | cut -d" -f4) && \
+sudo curl -L "https://github.com/docker/compose/releases/download/$COMVER/docker-compose-$(uname -s)-$(uname -m)" -o /usr/bin/docker-compose && \
+sudo chmod +x /usr/bin/docker-compose && \
+docker-compose --version && \
+```
+![image](https://github.com/aqyunk/aqyunk/blob/main/2.jpg)
+* Установка и настройка Docker
+
+```
+sudo wget -P /etc/yum.repos.d/ https://download.docker.com/linux/centos/docker-ce.repo
+sudo yum install docker-ce docker-ce
+sudo systemctl enable docker --now
+docker compose up -d
+```
+![image](https://github.com/aqyunk/aqyunk/blob/main/4.jpg)  
+
+## Конфигурация отдельных сервисов
+### Prometheus
+* После Установки докера пишем ` sudo vi docker-compose.yaml ` (Обязательно что бы был расширения.yaml)Нас перекидывает на текстовый редактор:
+  * Нас перекинет в текстовый редактор
+   * Что-бы что-то изменить в тесковом редакторе нажмите `insert` на клавиатуре
+   * Что бы сохранить что-то в этом документе нажимаем Esc пишем  `:wq!`
+ В этом текставом редакторе мы должны поставить node-exporter после services
+
+```
+  node-exporter:
+    image: prom/node-exporter
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    container_name: exporter < запомнить название name
+    hostname: exporter
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --collector.filesystem.ignored-mount-points
+      - ^/(sys|proc|dev|host|etc|rootfs/var/lib/docker/containers|rootfs/var/lib/docker/overlay2|rootfs/run/docker/netns|rootfs/var/lib/docker/aufs)($$|/)
+    ports:
+      - 9100:9100
+    restart: unless-stopped
+    environment:
+      TZ: "Europe/Moscow"
+    networks:
+      - default
+```
+Далее пишем 
+```
+cd
+cd /mnt/common_volume/swarm/grafana/config 
+sudo vi prometheus.yaml 
+```
+
+* В этом файле нужно изменить первый ip Адрес на тот, который мы должны были запомнить 
+  * Вставляем в первый targets 
+  * После двоеточие цифры оставляем
+![image](https://github.com/aqyunk/aqyunk/blob/main/5.jpg)|
+### Grafana
+* переходим на сайт `localhost:3000`
+  
+* User & Password GRAFANA: admin
+  * Код графаны: 3000
+  * Код прометеуса: http://prometheus:9090
+
+* в меню выбираем вкладку Dashboards и создаем Dashboard
+  * ждем кнопку +Add visualization, а после "Configure a new data source"
+  * выбираем Prometheus
+
+* Connection
+  * `http://prometheus:9090`
+
+* Authentication
+  * Basic authentication
+    * User: `admin`
+    * Password: `admin`
+   * Нажимаем на Save & test и должно показывать зелёную галочку
+
+* в меню выбираем вкладку Dashboards и создаем Dashboard
+  * ждем кнопку "Import dashboard"
+  * `Find and import dashboards for common applications at grafana.com/dashboards: 1860`  //ждем кнопку Load
+  * Select Prometheus ждем кнопку "Import"
+  
+> [!NOTE]
+> Всё должно выглядить как на скриншоте `https://github.com/TymkaTy/Docker/blob/main/grafana_stack_for_docker/Screenshot_Prometheus.png`
+
+Если не работает то переходим в 
+
+```
+cd grafana_stack_for_docker
+sudo docker compose stop
+sudo docker compose up -d
+```
+То есть перезапускаем докер
+
+![image](https://github.com/aqyunk/aqyunk/blob/main/6.jpg)
+![image](https://github.com/aqyunk/aqyunk/blob/main/7.jpg)
+### VicroriaMetrics
+
+* Для начала изменим docker-compose.yaml:
+```
+cd grafana_stack_for_docker
+sudo vi docker-compose.yaml
+```
+После чего в в самом текстовом редакторе после `prometheus` вставляем
+```
+  vmagent:
+    container_name: vmagent
+    image: victoriametrics/vmagent:v1.105.0
+    depends_on:
+      - "victoriametrics"
+    ports:
+      - 8429:8429
+    volumes:
+      - vmagentdata:/vmagentdata
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - "--promscrape.config=/etc/prometheus/prometheus.yml"
+      - "--remoteWrite.url=http://victoriametrics:8428/api/v1/write"
+    restart: always
+  # VictoriaMetrics instance, a single process responsible for
+  # storing metrics and serve read requests.
+  victoriametrics:
+    container_name: victoriametrics
+    image: victoriametrics/victoria-metrics:v1.105.0
+    ports:
+      - 8428:8428
+      - 8089:8089
+      - 8089:8089/udp
+      - 2003:2003
+      - 2003:2003/udp
+      - 4242:4242
+    volumes:
+      - vmdata:/storage
+    command:
+      - "--storageDataPath=/storage"
+      - "--graphiteListenAddr=:2003"
+      - "--opentsdbListenAddr=:4242"
+      - "--httpListenAddr=:8428"
+      - "--influxListenAddr=:8089"
+      - "--vmalert.proxyURL=http://vmalert:8880"
+    restart: always
+```
+Сохраняем и выходим
+
+* Захом в connection
+  * там где мы писали `http:prometheus:9090` пишем  `http:victoriametrics:9090` И заменяем имя из "Prometheus-2" в "Vika"
+  * нажимаем на dashboards add visualition выбираем "Vika"
+  * снизу меняем на "cod"
+  * Переходим в терминал и пишем
+
+```
+echo -e "# TYPE OILCOINT_metric1 gauge\nOILCOINT_metric1 0" | curl --data-binary @- http://localhost:8428/api/v1/import/prometheus  
+curl -G 'http://localhost:8428/api/v1/query' --data-urlencode 'query=OILCOINT_metric1'
+
+```
+(Значение 0 меняем на любое другое)
+* Копируем переменную OILCOINT_metric1 и вставляем в cod
+* Нажимаем run 
+![image](https://github.com/user-attachments/assets/49d9f76a-a545-485d-b191-ae67ebf6ddc3)
+
+
+
+
+
+
+
+
+
+  
+
+
+ 
